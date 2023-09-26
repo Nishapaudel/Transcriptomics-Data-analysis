@@ -1,0 +1,442 @@
+---
+title: "edgeR with different models"
+author: "Nisha paudel"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: simplex
+    highlight: pygments
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Experiments with combinations of multiple factors
+
+<p>Instructions for the code are from https://f1000research.com/articles/5-1438 and edgeR bioconductor manual and chapter 3.3 page 36 of edgeR manual https://bioconductor.org/packages/release/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf </p>
+
+<p>Based on edgeR quasilikelihood pipeline, NB model with F tests -because of strict error control rate than traditional edgeR and DESeq2 -limma also offer excellent error control and are recommended for large datasets due to its speed</p>
+
+<p>The data is from a paper Generation of a microglial developmental index in mice and in humans reveals a sex difference in maturation and immune reactivity Published in Glia in 2017.</p>
+
+<p>Here is analysis for P60 sal, E18, P4, P14 for both male and female. We are using design <- model.matrix(~ 0 + Group), where group is interation Sex * Age,  this design is easy to implement and recommended by authors
+is equivalent to design <- model.matrix(~ 0 + Sex + Sex:Age, data=targets)/(~ 0+ Sex +Sex:Age) <b> this is called Nested factor Design </b>
+page 34 
+
+
+## load libraries and data
+```{r}
+library(edgeR)
+library(limma)
+count_data1 <- read.csv('/Users/nishapaudel/Documents/CASP/Data/Counts.csv', sep =',', header=T, row.names = 1)
+sampleinfo <- read.csv("/Users/nishapaudel/Documents/CASP/Data/NEW_design.txt", sep = ',', header = TRUE, row.names = 1, stringsAsFactors = TRUE)
+sampleinfo
+dim(count_data1)
+```
+
+## Grouping for interation
+```{r}
+group <- factor(paste0(sampleinfo$Sex, ".", sampleinfo$Age))
+y <- DGEList(count_data1, group=group)
+```
+
+## Filter
+```{r}
+keep <- filterByExpr(y)
+summary(keep)
+```
+
+## Normalize
+```{r}
+y <- normLibSizes(y) # Default normalization is TMM
+y$samples
+```
+## MDS
+```{r}
+plotMDS(y, col= as.numeric(group))
+```
+
+
+
+## Model Design
+```{r}
+design <- model.matrix(~ 0 + group)
+colnames(design) <- levels(group)
+design
+```
+## Dispersion estimation
+```{r}
+
+y <- estimateDisp(y, design, robust=TRUE)
+y$common.dispersion
+plotBCV(y)
+
+
+```
+## Fitting to GLM
+```{r}
+fit <- glmQLFit(y, design, robust=TRUE)
+head(fit$coefficients)
+```
+
+```{r}
+plotQLDisp(fit)
+```
+
+
+## ANOVA-like testing -Sex wise DEGs at various age groups
+
+```{r}
+con <- makeContrasts(F18vsM18 = F.E18 - M.E18, FP4vsMP4  = F.P4 - M.P4,FP14vsMP14  = F.P14 - M.P14, FP60_SvsMP60_S = F.P60_S - M.P60_S, levels=design)
+
+```
+
+
+
+```{r}
+anov <- glmQLFTest(fit, contrast=con)
+topTags(anov)
+```
+
+
+```{r}
+con <- makeContrasts(F18vsM18 = F.E18 - M.E18, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_E18_sex <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_E18_sex <-rownames(subset(sig,logFC<0.4))
+```
+
+
+```{r}
+con <- makeContrasts( FP4vsMP4  = F.P4 - M.P4, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_P4_sex <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_P4_sex <-rownames(subset(sig,logFC<0.4))
+```
+
+
+```{r}
+con <- makeContrasts(FP14vsMP14  = F.P14 - M.P14, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_P14_sex <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_P14_sex <-rownames(subset(sig,logFC<0.4))
+```
+
+
+```{r}
+con <- makeContrasts(FP60_SvsMP60_S = F.P60_S - M.P60_S, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_P60_sex <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_P60_sex <-rownames(subset(sig,logFC<0.4))
+```
+
+## VennDiagram Sex wise up regulated DEGs
+Kdm5d and Dcpp1 are the single unique genes on E18 and P60
+
+Overlapping genes are Tsix and Xist which are present in Female
+
+```{r}
+library(VennDiagram)
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("E18"=dge_edgr_up_E18_sex,"P 4"=dge_edgr_up_P4_sex,"P 14"=dge_edgr_up_P14_sex,"P 60"=dge_edgr_up_P60_sex )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("lightpink", "cyan1", "violet","lightgreen" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "black", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+```
+
+
+
+## VennDiagram Sex wise down regulated DEGs
+Overlapping genes are Uty, Kdm5d, Ddx3y and Eif2s3y.
+```{r}
+library(VennDiagram)
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("E18"=dge_edgr_down_E18_sex,"P 4"=dge_edgr_down_P4_sex,"P 14"=dge_edgr_down_P14_sex,"P 60"=dge_edgr_down_P60_sex )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("lightpink", "cyan1", "violet","lightgreen" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "black", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+```
+
+## ANOVA-like testing -Age wise DEGs at various age groups
+## For Female 
+
+```{r}
+con <- makeContrasts(F18vsF4 = F.E18 - F.P4, FP4vsFP14  = F.P4 - F.P14,FP14vsFP60_S  = F.P14 - F.P60_S, levels=design)
+```
+
+```{r}
+anov <- glmQLFTest(fit, contrast=con)
+topTags(anov)
+```
+```{r}
+con <- makeContrasts(F18vsF4 = F.E18 - F.P4, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+plotMD(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_F_18_VS_4 <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_F_18_VS_4 <-rownames(subset(sig,logFC<0.4))
+```
+
+
+```{r}
+con <- makeContrasts( FP4vsFP14  = F.P4 - F.P14, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_F_14VS4 <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_F_14VS4 <-rownames(subset(sig,logFC<0.4))
+```
+
+
+```{r}
+con <- makeContrasts(FP14vsFP60_S  = F.P14 - F.P60_S, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_F_14VS60 <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_F_14VS60 <-rownames(subset(sig,logFC<0.4))
+```
+
+## VennDiagram Female age wise up regulated DEGs
+```{r}
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("F.E18 VS F.P4"=dge_edgr_up_F_18_VS_4,"F.P4 VS F.P14"=dge_edgr_up_F_14VS4,"F.P14 VS F.P60"=dge_edgr_up_F_14VS60 )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("lightpink", "cyan1", "violet" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "black", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+```
+## VennDiagram Female age wise down regulated DEGs 
+```{r}
+
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("F.E18 VS F.P4"=dge_edgr_down_F_18_VS_4,"F.P4 VS F.P14"=dge_edgr_down_F_14VS4,"F.P14 VS F.P60"=dge_edgr_down_F_14VS60 )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("lightpink", "cyan1", "violet" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "black", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+```
+
+
+
+
+###  age wise for male
+
+
+```{r}
+con <- makeContrasts(M18vsM4 = M.E18 - M.P4, MP4vsMP14  = M.P4 - M.P14,MP14vsMP60_S  = M.P14 - M.P60_S, levels=design)
+```
+
+```{r}
+anov <- glmQLFTest(fit, contrast=con)
+topTags(anov)
+```
+
+```{r}
+con <- makeContrasts(M18vsM4 = M.E18 - M.P4, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+plotMD(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_M_18_VS_4 <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_M_18_VS_4 <-rownames(subset(sig,logFC<0.4))
+```
+
+```{r}
+con <- makeContrasts( MP4vsMP14  = M.P4 - M.P14, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_M_14VS4 <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_M_14VS4 <-rownames(subset(sig,logFC<0.4))
+```
+
+
+
+```{r}
+con <- makeContrasts(MP14vsMP60_S  = M.P14 - M.P60_S, levels=design)
+qlf <- glmQLFTest(fit, contrast= con )
+topTags(qlf)
+summary(decideTests(qlf))
+table(p.adjust(qlf$table$PValue, method = "BH") < 0.05)
+dge<-topTags(qlf, n=Inf)
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+dge_edgr_up_M_14VS60 <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down_M_14VS60 <-rownames(subset(sig,logFC<0.4))
+```
+### VennDiagram Male age wise up regulated DEGs
+```{r}
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("M.E18 VS M.P4"=dge_edgr_up_M_18_VS_4,"M.P4 VS M.P14"=dge_edgr_up_M_14VS4,"M.P14 VS M.P60"=dge_edgr_up_M_14VS60 )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("purple", "grey", "lightgreen" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "black", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+```
+### VennDiagram Male age wise down regulated DEGs
+```{r}
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("M.E18 VS M.P4"=dge_edgr_down_M_18_VS_4,"M.P4 VS M.P14"=dge_edgr_down_M_14VS4,"M.P14 VS M.P60"=dge_edgr_down_M_14VS60 )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("purple", "grey", "lightgreen" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "black", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+```
+## For reproducibility
+
+```{r}
+sessionInfo()
+```
+
+```{r}
+getwd()
+```
+
