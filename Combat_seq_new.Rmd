@@ -1,0 +1,76 @@
+---
+title: "Combat seq normalisation"
+author: "Nisha paudel"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: simplex
+    highlight: pygments
+    toc: true
+    toc_float: true
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# set echo false if you do not wanna show code
+```
+
+```{r}
+count_data <- read.csv('./Data/Counts.csv', sep =',', header=T, row.names = 1)
+sampleinfo <- read.csv("./Data/NEW_design_batch.csv", sep = ',', header = TRUE, row.names = 1, stringsAsFactors = TRUE)
+#sampleinfo$Treatment <- NULL
+batch <- sampleinfo$Batch
+dim(count_data)
+```
+
+```{r,}
+library(edgeR)
+library(sva)
+library(limma)
+#adjusted <- ComBat_seq(count_count/TMM, batch=batch, group=NULL)
+```
+
+
+
+```{r}
+y <- DGEList(count_data)
+y
+```
+
+
+```{r}
+combat_corrected <- ComBat_seq(y$counts, batch = batch)
+head(combat_corrected)
+```
+
+```{r}
+y <- DGEList(combat_corrected)
+y
+```
+
+```{r}
+group <- paste(sampleinfo$Age) #
+group <- factor(group)
+head(group)
+# Add the group information into the DGEList
+y$samples$group <- group
+```
+
+```{r}
+keep <- filterByExpr(y, group = group)
+y <- y[keep, , keep.lib.sizes=FALSE]
+dim(y)
+```
+
+```{r}
+TMM <- calcNormFactors(y, method = "TMM")
+logcounts <- cpm(TMM,log=TRUE) # after getting size factors using cpm will give TMM calculated values
+#boxplot(logcounts, xlab="", ylab="TMM normalised counts",las=2, col = "mistyrose1",cex.axis=0.69 ,main="TMM normalised")
+## Let's add a blue horizontal line that corresponds to the median logCPM
+#abline(h=median(logcounts),col="black")
+plotMDS(TMM, col= as.numeric(group), main = "MDS Plot")
+```
+
+
+
