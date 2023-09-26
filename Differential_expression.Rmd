@@ -1,0 +1,331 @@
+---
+title: "Different strategies for Differential gene expression"
+author: "Nisha paudel"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: simplex
+    highlight: pygments
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# set echo false if you do not wanna show code
+```
+
+## Read data and meta data
+
+```{r read_csv}
+#count_data <- read.csv('/Users/nishapaudel/Documents/CASP/Data/treated_samples/lps_sal.csv', sep =',', header=T, row.names = 1)
+count_data <- read.csv('/Users/nishapaudel/Documents/CASP/Data/treated_samples/lps_sal.csv', sep =',', header=T, row.names = 1)
+sampleinfo <- read.csv("/Users/nishapaudel/Documents/CASP/Data/treated_samples/design.txt", sep = ',', header = TRUE, row.names = 1, stringsAsFactors = TRUE)
+
+dim(count_data)
+```
+
+## load the packages
+
+```{r, warning=FALSE,message=FALSE}
+library(edgeR)
+library(limma)
+library(DESeq2)
+
+
+```
+
+## Filtering
+
+```{r}
+y <- DGEList(count_data)
+group <- paste(sampleinfo$Sex,".",sampleinfo$Treatment) #
+group <- factor(group)
+head(group)
+y$samples$group <- group
+keep <- filterByExpr(y, group = group)
+y <- y[keep, , keep.lib.sizes=FALSE]
+dim(y)
+```
+
+```{r}
+y <- calcNormFactors(y, method = "TMM")
+
+```
+
+## edgeR
+
+```{r}
+design <- model.matrix(~0+group)
+colnames(design)<-levels(group)
+design
+
+```
+
+
+```{r}
+## Make the column names of the design matrix a bit nicer to avoid syntax error on downstream analysis
+colnames(design) <- c("F_LPS","F_sal","M_LPS", "M_sal") 
+design
+```
+
+
+```{r}
+y <-estimateDisp(y, design,robust = TRUE)
+plotBCV(y)
+```
+
+```{r}
+fit <- glmQLFit(y, design, robust = TRUE)
+head(fit$coefficients)
+qlf <-glmQLFTest(fit,design)
+
+```
+
+```{r}
+con <- makeContrasts(F_sal-M_sal , levels = design) 
+
+res <-glmQLFTest(fit, contrast =con )
+topTags(res)
+
+```
+
+```{r}
+summary(decideTests(res))
+
+```
+
+```{r}
+dge<-topTags(res, n=Inf)
+dge
+
+```
+
+```{r}
+dge_edgR <-dge
+sig <- subset(dge_edgR$table,FDR < 0.05)
+sig
+```
+
+```{r}
+dge_edgr_up <-rownames(subset(sig,logFC>0.4))
+dge_edgr_down <-rownames(subset(sig,logFC<0.4))
+length(dge_edgr_up)
+```
+
+## DESeq2
+
+```{r}
+dds <- DESeqDataSetFromMatrix(count_data, 
+                    colData=data.frame(sampleinfo), 
+                              ~ Sex)
+```
+
+```{r}
+
+y <- DGEList(counts=counts(dds))
+#keep <- filterByExpr(y)
+keep <- filterByExpr(y, group=group)
+table(keep)
+```
+
+```{r}
+y <- y[keep,]
+dds <- dds[keep,]
+```
+
+```{r, warning=FALSE, message=FALSE}
+dds <- DESeq(dds)
+res <-results(dds, contrast = c("Sex","M", "F"))
+```
+
+```{r}
+summary(res, alpha=0.05)
+```
+
+```{r}
+plotDispEsts(dds)#plotDispEsts(dds,ylim=c(1e-7,1e2))
+```
+
+```{r}
+vsd <- vst(dds, blind = FALSE)
+zz <- cbind(as.data.frame(res),assay(vsd))
+dge <- as.data.frame(zz[order(zz$pvalue),])
+dge_deseq2 <-dge
+sig <-subset(dge, padj<0.05)
+sig
+dge_deseq2_up <- rownames(subset(sig,log2FoldChange>0.4))
+dge_deseq2_down <- rownames(subset(sig,log2FoldChange<0.4))
+
+```
+
+## limma voom
+
+A key strength of linear modeling approach, is the ability accomodate arbitrary experimental complexity.
+
+```{r}
+colnames(design) <- levels(group)
+```
+
+```{r}
+v <- voom(y, design,plot=TRUE)
+```
+
+```{r}
+#write.csv(v$E, file ="/Users/nishapaudel/Documents/CASP/others/Voom_TMM_develop.csv" , quote = FALSE)
+```
+
+```{r}
+fit <-lmFit(v,design)
+fit.cont <- contrasts.fit(fit,MvsF)
+fit.cont <- eBayes(fit.cont)
+summa.fit <-decideTests(fit.cont)
+summary(summa.fit)
+```
+
+```{r}
+dge <- topTable(fit.cont,n=Inf) 
+head(dge,10)
+```
+
+```{r}
+dge <- topTable(fit.cont,n=Inf) 
+head(dge,10)
+
+dge_voom <-dge
+sig <- subset(dge_voom,adj.P.Val <0.05)
+dge_voom_up <-rownames(subset(sig,logFC>0.4))
+dge_voom_down <-rownames(subset(sig,logFC<0.4))
+length(dge_voom_down)
+```
+
+## Venn diagram
+
+```{r}
+library(VennDiagram)
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("edgeR up"=dge_edgr_up,"DESeq2 up"=dge_deseq2_up,"Voom up"=dge_voom_up )
+
+# Create the Venn diagram with custom colors
+vennColors <- c("lightpink", "cyan1", "violet" )
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "transparent", # Set background color to transparent for better display in R session
+  cex = 2.7,
+  cex.label = 7,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+
+```
+
+```{r}
+
+library(VennDiagram)
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list("edgeR down"=dge_edgr_down,"DESeq2 down"=dge_deseq2_down,"Voom down"=dge_voom_down)
+
+# Create the Venn diagram with custom colors
+vennColors <- c( "aquamarine", "blue1", "darkolivegreen1")
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "transparent", # Set background color to transparent for better display in R session
+  cex = 2.4,
+  cex.label = 3,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+
+```
+
+```{r}
+getwd()
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+library("eulerr")
+
+
+
+v1 <- list("edgeR up"=dge_edgr_up, "edgeR down"=dge_edgr_down,
+  "DESeq2 up"=dge_deseq2_up,"DESeq2 dn"=dge_deseq2_down)
+#plot(euler(v1),quantities = TRUE)
+
+v1 <- list("edgeR up"=dge_edgr_up, "edgeR down"=dge_edgr_down,
+  "DESeq2 up"=dge_deseq2_up,"DESeq2 down"=dge_deseq2_down)
+#plot(euler(v1),quantities = TRUE)
+
+v1 <- list("edgeR up"=dge_edgr_up, "edgeR down"=dge_edgr_down,
+  "DESeq2 up"=dge_deseq2_up,"DESeq2 down"=dge_deseq2_down,
+  "Voom up"=dge_voom_up, "Voom down"=dge_voom_down)
+#plot(euler(v1),quantities = TRUE)
+
+
+
+```
+
+```{r}
+# Combine the lists into a named list for the Venn diagram
+#venn <- list("edgeRdown"=dge_edgr_down,"DESeq2down"=dge_deseq2_down,"Voomdown"=dge_voom_down)
+
+```
+
+```{r}
+# Get the unique elements in Deseq2
+#deseq_un <- setdiff(venn$DESeq2down, unlist(venn[-which(names(venn) == "DESeq2down")]))
+
+
+```
+
+```{r}
+# Get the unique elements in edgR
+#edgR_un <- setdiff(venn$edgeRdown, unlist(venn[-which(names(venn) == "edgeRdown")]))
+#print(edgR_un)
+```
+
+```{r}
+# Get the unique elements in limma
+#limma_un <- setdiff(venn$Voomdown, unlist(venn[-which(names(venn) == "Voomdown")]))
+#print(limma_un)
+```
+
+```{r}
+#write.csv(dge, file ="/Users/nishapaudel/Documents/CASP/Data/dge_e18vsp4_edgr.csv", quote = FALSE)
+```
+
+```{r}
+getwd()
+```
+
+
+```{r}
+
+#write.csv(dge, file ="/Users/nishapaudel/Documents/CASP/Data/others/dge_e18vsp4_edgr", quote = FALSE, row.names = 1)
+#write.csv(edgR_un, file ="/Users/nishapaudel/Documents/CASP/Data/others/edgR_down_genes_developmental_unique", quote = FALSE)
+#write.csv(deseq_un, file ="/Users/nishapaudel/Documents/CASP/Data/others/deseq_down_genes_developmental_unique", quote = FALSE)
+```
+
+## Session information
+
+```{r,session}
+sessionInfo()
+```
