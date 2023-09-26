@@ -1,0 +1,328 @@
+---
+title: "Normalisation strategies for Differential gene expression"
+author: "Nisha paudel"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: simplex
+    highlight: pygments
+    toc: true
+    toc_float: true
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# set echo false if you do not wanna show code
+```
+
+
+The data is from a paper **Generation of a microglial developmental index in mice and in humans reveals a sex difference in maturation and immune reactivity** Published in Glia in 2017.
+
+## LPS and Saline treated samples
+
+<ol>
+  <li>**No normalisation (negative control)**</li>
+  <li>**TMM normalisation**</li>
+  <li>**TMMwsp **</li>
+  <li>**UQ**</li>
+  <li>**RLE**</li>
+</ol>
+
+<p>TMM, TMMwsp, UQ and RLE are widely used techniques for differential expression. They have an important *statistical assumption*. They are used when the majority of genes are not differentially expressed. This assumption makes sure that the normalised counts of all the samples have similar normal distribution curve, which makes the dowmstream analysis easy by using parametric tests in like in edgR and DEseq2.  </p>
+
+## Read data and meta data
+```{r read_csv}
+count_data <- read.csv('/Users/nishapaudel/Documents/CASP/Data/treated_samples/lps_sal.csv', sep =',', header=T, row.names = 1)
+sampleinfo <- read.csv("/Users/nishapaudel/Documents/CASP/Data/treated_samples/design.txt", sep = ',', header = TRUE, row.names = 1, stringsAsFactors = TRUE)
+sampleinfo$Treatment
+sampleinfo$Sex <- NULL
+# I am selecting age alone because age wise variation in data is high, giving higher number of DEGs for comparison
+dim(count_data)
+```
+
+## Load the libraries and set DGE object
+
+```{r}
+library(edgeR)
+library(limma)
+y <- DGEList(count_data)
+```
+
+adding group info in object
+```{r}
+group <- paste(sampleinfo$Treatment) #
+group <- factor(group)
+head(group)
+# Add the group information into the DGEList
+y$samples$group <- group
+```
+
+## Filter lowly expressed genes
+
+```{r}
+keep <- filterByExpr(y, group = group)
+y <- y[keep, , keep.lib.sizes=FALSE]
+dim(y)
+```
+
+
+
+
+## No normalisation (Negative control)
+Only cpm log transformed data, cpm normalises the sequencing depth but not compositional bias. Here scale factor is set 1 for all.
+
+```{r}
+no_normalise <- calcNormFactors(y, method = "none")
+logcount <- cpm(no_normalise,log=TRUE) 
+boxplot(logcount, xlab="", ylab="not normalized",las=2, col = "grey",cex.axis=0.69 ,main="No normalisation")
+abline(h=median(logcount),col="black")
+
+```
+```{r}
+plotMDS(no_normalise, col= as.numeric(group), main = "MDS Plot of No normalization")
+```
+
+
+## TMM
+
+TMM normalisation is done on cpm values and log transformed. TMM is defult normalisation in edgR. It is implemented from Robinson and Oshlack (2010)., If refcolumn is not specified, then column whose cpm uq is closed to mean uq is set as reference.Only TMM and TMMswp excludes genes with large fold changes which is compositional bias, 
+
+```{r}
+TMM <- calcNormFactors(y, method = "TMM")
+logcounts <- cpm(TMM,log=TRUE) # after getting size factors using cpm will give TMM calculated values
+boxplot(logcounts, xlab="", ylab="TMM normalised counts",las=2, col = "mistyrose1",cex.axis=0.69 ,main="TMM normalised")
+## Let's add a blue horizontal line that corresponds to the median logCPM
+abline(h=median(logcounts),col="black")
+#plotMDS(TMM, col= as.numeric(group))
+```
+
+## TMMwsp
+It is TMM with singleton pairing. It is modofied version of TMM to handle zero inflation. In TMM, genes with zero count in either of two libraries, then such gene is ignored while comparing between two library. However, in TMMwsp if there is some value in either of two libraries, then the gene is not ignored. If refcolumn is not specified, then the column with largest sum of square root counts is used as the reference library.   
+
+```{r}
+TMMwsp <- calcNormFactors(y, method = "TMMwsp")
+logcountswsp <- cpm(TMMwsp,log=TRUE) 
+boxplot(logcountswsp, xlab="", ylab="TMMwsp normalized",las=2, col = "aquamarine",cex.axis=0.69 ,main="TMMwsp normalised")
+abline(h=median(logcountswsp),col="black")
+#plotMDS(TMMwsp, col= as.numeric(group))
+```
+
+
+## Upper Quartile (UQ)
+The UQ normalisation method is as defied by Bullard et al (2010), here the scale factors are calculated from the geometric mean of all columns and the median ratio of each sample to the median library is taken as a scale factor. (because geometric mean is used the large values appear small)
+
+```{r}
+UQ <- calcNormFactors(y, method = "upperquartile")
+logcountsuq <- cpm(TMMwsp,log=TRUE) 
+boxplot(logcountsuq, xlab="", ylab="upperquartile normalized counts",las=2, col = "coral",cex.axis=0.69 ,main="Upperquartile normalised counts")
+abline(h=median(logcountsuq),col="black")
+#plotMDS(UQ, col= as.numeric(group))
+```
+
+
+
+## RLE(Relative log expression)
+
+It is proposed by Anders abd Huber (2010), here, median library is calculated from geometric mean of all columns and the median ratio of each sample to the median library is taken as the scale factor.
+
+
+```{r}
+RLE <- calcNormFactors(y, method = "RLE")
+logcountsRLE <- cpm(RLE,log=TRUE) 
+boxplot(logcountsRLE, xlab="", ylab="RLE normalized counts",las=2, col = "darkolivegreen1",cex.axis=0.69 ,main="RLE normalised counts")
+abline(h=median(logcountsRLE),col="black")
+#plotMDS(RLE, col= as.numeric(group))
+```
+
+```{r}
+design <- model.matrix(~0+group)
+colnames(design)<-levels(group)
+```
+
+
+## Design of the matrix and contrast
+
+```{r}
+
+SalvsLPS <- makeContrasts( Sal - LPS  , levels = design)
+```
+
+## DEGs from no normalisation
+
+```{r}
+no_normalise <-estimateDisp(no_normalise,design, robust = TRUE)
+no_normalise <-glmQLFit(no_normalise,design, robust =TRUE)
+no_normalise <-glmQLFTest(no_normalise, contrast = SalvsLPS)
+summary(decideTests(no_normalise))
+table(p.adjust(no_normalise$table$PValue, method = "BH") < 0.05)
+```
+## DEGs from TMM
+```{r}
+TMM <-estimateDisp(TMM,design, robust = TRUE)
+TMM <-glmQLFit(TMM,design, robust =TRUE)
+TMM <-glmQLFTest(TMM, contrast = SalvsLPS)
+summary(decideTests(TMM))
+table(p.adjust(TMM$table$PValue, method = "BH") < 0.05)
+```
+## DEGs from TMMwsp
+```{r}
+TMMwsp <-estimateDisp(TMMwsp,design, robust = TRUE)
+TMMwsp <-glmQLFit(TMMwsp,design, robust =TRUE)
+TMMwsp <-glmQLFTest(TMMwsp, contrast = SalvsLPS)
+summary(decideTests(TMMwsp))
+table(p.adjust(TMMwsp$table$PValue, method = "BH") < 0.05)
+```
+## DEGs from UQ
+
+```{r}
+UQ <-estimateDisp(UQ,design, robust = TRUE)
+UQ <-glmQLFit(UQ,design, robust =TRUE)
+UQ <-glmQLFTest(UQ, contrast = SalvsLPS)
+summary(decideTests(UQ))
+table(p.adjust(UQ$table$PValue, method = "BH") < 0.05)
+```
+
+## DEGs from RLE
+```{r}
+RLE <-estimateDisp(RLE,design, robust = TRUE)
+RLE <-glmQLFit(RLE,design, robust =TRUE)
+RLE <-glmQLFTest(RLE, contrast = SalvsLPS)
+summary(decideTests(RLE))
+table(p.adjust(RLE$table$PValue, method = "BH") < 0.05)
+```
+
+```{r}
+
+get_de <- function(x, pvalue){
+  my_i <- p.adjust(x$PValue, method="BH") < pvalue
+  row.names(x)[my_i]
+}
+ 
+de_no_norm <- get_de(no_normalise$table, 0.05)
+de_tmm <- get_de(TMM$table, 0.05)
+de_tmmwsp <- get_de(TMMwsp$table, 0.05)
+de_rle <- get_de(RLE$table, 0.05)
+de_uq <- get_de(UQ$table, 0.05)
+#de_uq
+```
+
+
+
+## VennDiagram of DEG list
+
+```{r, message=FALSE,warning=FALSE}
+
+library(VennDiagram)
+# Combine the lists into a named list for the Venn diagram
+venn_data <- list(no_norm = de_no_norm, TMM = de_tmm, TMMwsp = de_tmmwsp, UQ = de_uq,RLE = de_rle)
+
+# Create the Venn diagram with custom colors
+vennColors <- c("grey", "mistyrose1", "aquamarine", "coral", "darkolivegreen1")
+
+# Set up the Venn diagram configuration
+venn_config <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  fill = vennColors,
+  filename = NULL, # Set filename to NULL to display the plot directly in R session
+  imagetype = "png", # You can change this to other formats like "pdf", "jpeg", etc.
+  col = "transparent", # Set background color to transparent for better display in R session
+  cex = 2.4,
+  cex.label = 3,
+  lwd = 2 
+)
+
+# Display the Venn diagram
+grid.newpage()
+grid.draw(venn_config)
+
+
+```
+
+ 
+ 
+
+ 
+```{r}
+
+
+# Get the unique elements in TMM
+unique_tmm <- setdiff(venn_data$TMM, unlist(venn_data[-which(names(venn_data) == "TMM")]))
+
+# Print the unique elements
+print(unique_tmm)
+```
+ 
+```{r}
+# Get the unique elements in TMMwsp
+#unique_no <- setdiff(venn_data$no_norm, unlist(venn_data[-which(names(venn_data) == "no_norm")]))
+#print(unique_no)
+```
+
+```{r}
+# Get the unique elements in TMMwsp
+unique_UQ <- setdiff(venn_data$UQ, unlist(venn_data[-which(names(venn_data) == "UQ")]))
+print(unique_UQ)
+```
+
+```{r}
+# Get the unique elements in TMMwsp
+#unique_RLE <- setdiff(venn_data$RLE, unlist(venn_data[-which(names(venn_data) == "RLE")]))
+#print(unique_RLE)
+```
+
+
+ 
+## save all the files for future reference 
+```{r save_file}
+#write.csv(no_normalise$table, file ="./others/no_normalisation_treated.csv" , quote = FALSE, row.names = T)
+
+#write.csv(TMM$table, file ="./others/TMM_treated.csv" , quote = FALSE, row.names = T)
+
+#write.csv(TMMwsp$table, file ="./others/TMMwsp_treated.csv" , quote = FALSE, row.names = T)
+
+#write.csv(UQ$table, file ="./others/UQ_treated.csv" , quote = FALSE, row.names = T)
+
+#write.csv(RLE$table, file ="./others/RLE_treated.csv" , quote = FALSE, row.names = T)
+
+#write.csv(no_normalise$table, file ="./others/no_normalisation_treated.csv" , quote = FALSE, row.names = T)
+
+## for files
+write.csv(logcount, file ="./others/no_normalisation_counts_treated.csv" , quote = FALSE, row.names = T) # normalisation
+
+write.csv(logcounts, file ="./others/TMM_counts_treated.csv" , quote = FALSE, row.names = T) # TMM
+
+write.csv(logcountswsp, file ="./others/TMMwsp_counts_treated.csv" , quote = FALSE, row.names = T)
+
+write.csv(logcountsuq, file ="./others/UQ_counts_treated.csv" , quote = FALSE, row.names = T)
+
+write.csv(logcountsRLE, file ="./others/RLE_counts_treated.csv" , quote = FALSE, row.names = T)
+
+
+## Saving unique elements
+## for files
+#write.csv(unique_no, file ="./others/no_normalization_unique_elements",quote=FALSE) # normalisation
+
+#write.csv(unique_tmmwsp, file ="./others/TMM_unique_elements" , quote = FALSE, row.names = T) # TMM
+
+#write.csv(unique_tmmwsp, file ="./others/TMMwsp_unique_elements" , quote = FALSE)
+
+#write.csv(unique_UQ, file ="./others/UQ_unique_elements" , quote = FALSE)
+
+#write.csv(unique_RLE, file ="./others/RLE_unique_elements.csv" , quote = FALSE)
+
+
+```
+
+## Remarks
+The RT-qPCR of unique genes from above gene list, can validate the if the technique is showing true biological signal 
+                                                                   
+
+## Session info
+
+```{r record_packages}
+sessionInfo()
+```
+
+
