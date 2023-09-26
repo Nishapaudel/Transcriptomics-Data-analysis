@@ -1,0 +1,295 @@
+---
+title: "Lolipop plot between male and female"
+author: "Nisha_paudel"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(hrbrthemes)
+library(kableExtra)
+library(patchwork)
+data <- read.csv('/Users/nishapaudel/Documents/CASP/Data/sept_15_tmm.csv', sep =',', header=T, row.names = 1)
+head(data)
+data_gene <- read.csv('/Users/nishapaudel/Documents/CASP/Data/sept_15_tmm.csv', sep =',', header=T) ## I am reading again just to get the genes names
+x<- data_gene$X
+head(data)
+```
+
+
+
+
+```{r}
+desired_columns <- c("M_P60_Sal_1", "M_P60_Sal_2", "M_P60_Sal_3", "M_P60_Sal_4", "M_P60_Sal_5")
+# Rearrange the columns based on the desired order
+data_rearranged_male <- data[, desired_columns]
+# Calculate row means for the data frame
+row_means <- rowMeans(data_rearranged_male[, -1])
+# Create a new data frame with gene names and row means
+new_df <- data.frame(male_sal = row_means)
+```
+
+
+```{r}
+desired_columns_f <- c( "F_P60_Sal_1", "F_P60_Sal_2", "F_P60_Sal_3", "F_P60_Sal_4", "F_P60_Sal_5", "F_P60_Sal_6", "F_P60_Sal_7")
+# Rearrange the columns based on the desired order
+data_rearranged_f <- data[, desired_columns_f]
+# Calculate row means for the data frame
+row_means <- rowMeans(data_rearranged_f[, -1])
+# Create a new data frame with gene names and row means
+new_df_f <- data.frame(female_sal = row_means)
+```
+
+```{r}
+Female_sal<- new_df_f$female_sal
+Male_sal <- new_df$male_sal
+combined_df <- cbind( Female_sal, Male_sal)
+# Calculate row means for the data frame
+means <- rowMeans(combined_df)
+combined_df_new <- data.frame(x, Female_sal, Male_sal,means)
+
+
+```
+
+```{r}
+# order the rows Assuming 'data' is your data frame with a 'mymean' column
+data_new <- combined_df_new[order(combined_df_new$means), ]
+```
+
+
+```{r}
+#select few genes from DF
+selected_genes <- c("Crip2","Ddr1","Cebpb","Nr3c1","Arhgef10","Tnfa", "Tlr4", "Ttr", "Il10ra", "Il1a", "Xist", "Tsix","Uty","Dcpp1","Zfp36", "P2ry12","Tgfbr1","Cx3cr1","Ccr5","Ncoa2","Il10", "Cxcl2","Fos","Il1b","Vegfc", "Hnrnpu", "Dusp1","Ccl5","Alox5ap","Adam9","yp11a1","Edn1","Fdxr","Raf1", "Tenc1","Ddx3y","Snrnp200" )
+combined_df_new_1 <- combined_df_new[selected_genes, ]
+
+
+```
+
+```{r}
+# Select rows by gene names using the %in% operator
+selected_rows <- combined_df_new[combined_df_new$x %in%selected_genes, ]
+```
+
+```{r}
+# order the means -> Assuming 'data' is your data frame with a 'mymean' column
+data_new <- selected_rows[order(selected_rows$means), ]
+```
+
+
+```{r}
+# Plot
+ggplot(data_new) +
+  geom_segment( aes(x=x, xend=x, y=Female_sal, yend=Male_sal), color="black") +
+  geom_point( aes(x=x, y=Female_sal), color="red", size=3 ) +
+  geom_point( aes(x=x, y=Male_sal), color= "blue", size=3 ) +
+  coord_flip()+
+  theme_ipsum() +
+  theme(
+    legend.position = "none",
+  ) +
+  xlab("Name of genes") +
+  ylab("TMM Normalized counts")+
+ggtitle("Saline treated female vs male")
+```
+
+
+
+## all data
+
+```{r}
+# Assuming 'data' is your data frame with a 'mymean' column
+data_new <- combined_df_new[order(combined_df_new$means), ]
+
+
+# order the means -> Assuming 'data' is your data frame with a 'mymean' column
+data_new <- data_new[order(data_new$means), ]
+```
+
+
+```{r}
+# Plot
+ggplot(data_new) +
+  geom_segment( aes(x=x, xend=x, y=Female_sal, yend=Male_sal), color="black") +
+  geom_point( aes(x=x, y=Female_sal), color="red", size=1 ) +
+  geom_point( aes(x=x, y=Male_sal), color= "blue", size=1 ) +
+  coord_flip()+
+  theme_ipsum() +
+  theme(
+    legend.position = "none",
+  ) +
+  xlab("Name of genes") +
+  ylab("Voom TMM Normalized counts")+
+  ggtitle("All genes, saline treated male vs female")
+```
+
+
+
+## above code optimised
+
+```{r}
+library(tidyverse)
+library(hrbrthemes)
+library(kableExtra)
+library(patchwork)
+data <- read.csv('/Users/nishapaudel/tmm.csv', sep =',', header=T, row.names = 1)
+head(data)
+data_gene <- read.csv('/Users/nishapaudel/tmm.csv', sep =',', header=T) ## I am reading again just to get the genes names
+x<- data_gene$X
+head(data)
+```
+
+
+
+```{r}
+desired_columns <- c("F_E18_1", "F_E18_2", "F_E18_3")
+# Rearrange the columns based on the desired order
+data_rearranged_female <- data[, desired_columns]
+# Calculate row means for the data frame
+row_means <- rowMeans(data_rearranged_female[, -1])
+# Create a new data frame with gene names and row means
+new_df_f <- data.frame(female_E18 = row_means)
+```
+
+
+```{r}
+desired_columns <- c( "F_P4_1", "F_P4_2", "F_P4_3", "F_P4_4")
+# Rearrange the columns based on the desired order
+data_rearranged_female_p4 <- data[, desired_columns]
+# Calculate row means for the data frame
+row_means <- rowMeans(data_rearranged_female_p4[, -1])
+# Create a new data frame with gene names and row means
+new_df_female_p4 <- data.frame(data_rearranged_female_p4 = row_means)
+```
+
+
+```{r}
+Female<- new_df_f$female_E18
+Female_p4 <- new_df_female_p4$data_rearranged_female_p4
+combined_df <- cbind( Female, Female_p4)
+# Calculate row means for the data frame
+means <- rowMeans(combined_df)
+combined_df_new <- data.frame(x, Female, Female_p4,means)
+```
+
+
+
+```{r}
+#select few genes from DF
+selected_genes <- c("Crip2","Ddr1","Cebpb","Nr3c1","Arhgef10","Tnfa", "Tlr4", "Il10ra", "Il1a", "Xist", "Tsix","Uty","Dcpp1","Zfp36", "P2ry12","Tgfbr1","Cx3cr1","Ccr5","Ncoa2","Il10", "Cxcl2","Fos","Il1b","Vegfc", "Hnrnpu", "Dusp1","Ccl5","Alox5ap","Adam9","yp11a1","Edn1","Fdxr","Raf1", "Tenc1","Ddx3y","Snrnp200" )
+combined_df_new_1 <- combined_df_new[selected_genes, ]
+
+
+```
+
+
+```{r}
+# Select rows by gene names using the %in% operator
+selected_rows <- combined_df_new[combined_df_new$x %in%selected_genes, ]
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+library(tidyverse)
+library(hrbrthemes)
+library(kableExtra)
+library(patchwork)
+```
+
+
+```{r}
+# Create data
+value2 <- abs(rnorm(26))*2
+data <- data.frame(
+  le=LETTERS[1:26], 
+  value2=value2, 
+  value3=value2+1+rnorm(26, sd=1) 
+)
+```
+
+
+```{r}
+ 
+# Reorder data using average? Learn more about reordering in chart #267
+data2 <- data %>% 
+  rowwise() %>% 
+  mutate( mymean = mean(c(value2,value2) )) %>% 
+  arrange(mymean) %>% 
+  mutate(le=factor(le, le))
+```
+
+```{r}
+
+
+
+# Plot
+ggplot(data) +
+  geom_segment( aes(x=x, xend=x, y=value1, yend=value2), color="grey") +
+  geom_point( aes(x=x, y=value1), color=rgb(0.2,0.7,0.1,0.5), size=3 ) +
+  geom_point( aes(x=x, y=value2), color=rgb(0.7,0.2,0.1,0.5), size=3 ) +
+  coord_flip()+
+  theme_ipsum() +
+  theme(
+    legend.position = "none",
+  ) +
+  xlab("") +
+  ylab("Value of Y")
+```
+
+
+```{r}
+# Plot
+ggplot(combined_df) +
+  geom_segment( aes(x=x, xend=x, y=Male_sal, yend=Female_sal), color="grey") +
+  geom_point( aes(x=x, y=Male_sal), color=rgb(0.2,0.7,0.1,0.5), size=3 ) +
+  geom_point( aes(x=x, y=Female_sal), color=rgb(0.7,0.2,0.1,0.5), size=3 ) +
+  coord_flip()+
+  theme_ipsum() +
+  theme(
+    legend.position = "none",
+  ) +
+  xlab("..") +
+  ylab("Value of Y")
+```
+
+```{r}
+# Libraries
+library(tidyverse)
+library(hrbrthemes)
+library(kableExtra)
+library(patchwork)
+
+# Load dataset from github
+data <- read.table("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/7_OneCatOneNum.csv", header=TRUE, sep=",")
+
+# Plot
+data %>%
+  filter(!is.na(Value)) %>%
+  arrange(Value) %>%
+  tail(20) %>%
+  mutate(Country=factor(Country, Country)) %>%
+  ggplot( aes(x=Country, y=Value) ) +
+    geom_segment( aes(x=Country ,xend=Country, y=0, yend=Value), color="grey") +
+    geom_point(size=3, color="#69b3a2") +
+    coord_flip() +
+    theme_ipsum() +
+    theme(
+      panel.grid.minor.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      legend.position="none"
+    ) +
+    xlab("") +
+    ylab("Weapon quantity (SIPRI trend-indicator value)")
+
+
+```
+
