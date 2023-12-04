@@ -1,0 +1,246 @@
+---
+title: "edgeR with different models"
+author: "Nisha paudel"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: simplex
+    highlight: pygments
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Model design information
+
+## load libraries and data
+
+```{r}
+library(edgeR)
+library(limma)
+count_data <- read.csv('/Users/nishapaudel/Documents/CASP/Data/Counts.csv', sep =',', header=T, row.names = 1)
+sampleinfo <- read.csv("/Users/nishapaudel/Documents/CASP/Data/NEW_design.txt", sep = ',', header = TRUE, row.names = 1, stringsAsFactors = TRUE)
+sampleinfo
+dim(count_data)
+
+```
+
+## 1. Nested interaction formulas
+
+```{r}
+
+age <- paste(sampleinfo$Age)
+age<- factor(age)
+sex <- paste(sampleinfo$Sex)
+sex <- factor(sex)
+#group <- factor(paste0(sampleinfo$Sex, ".", sampleinfo$Age)).  # not grouping here although group info bringes change 
+y <- DGEList(count_data, group = age)
+
+```
+
+```{r}
+#sampleinfo$Sex <-relevel(sampleinfo$Sex, ref="M") ## relevel
+design <- model.matrix(~ 0 + sex + sex:age, data = count_data)
+design
+
+```
+
+```{r}
+## Make the column names of the design matrix a bit nicer to avoid syntax error on downstream analysis
+colnames(design) <- c("Female_18", "Male_18", "F14", "M14","F4", "M4","FP60_S", "MP60_S" )
+design
+```
+
+```{r}
+keep <- filterByExpr(y)
+y <- y[keep, , keep.lib.sizes=FALSE]
+dim(y)
+```
+
+
+
+```{r}
+y <- calcNormFactors(y, method = "TMM")
+```
+
+```{r}
+y <- estimateDisp(y, design, robust=TRUE)
+plotBCV(y)
+fit <- glmQLFit(y, design, robust=TRUE)
+head(fit$coefficients)
+colnames(fit)
+```
+
+
+
+```{r}
+con <- makeContrasts(F_18vsF14 = F14-F4, levels=design)
+
+
+
+res <-glmQLFTest(fit, contrast =con)
+summary(decideTests(res))
+
+```
+
+
+
+## Result of nested model
+
+```{r}
+topTags(res)
+```
+
+
+Rrm1	-1.636694	6.262948	95.17406	8.664240e-13	1.221369e-09
+
+## 2. Factorial model
+
+
+```{r}
+library(edgeR)
+library(limma)
+count_data <- read.csv('/Users/nishapaudel/Documents/CASP/Data/Counts.csv', sep =',', header=T, row.names = 1)
+sampleinfo <- read.csv("/Users/nishapaudel/Documents/CASP/Data/NEW_design.txt", sep = ',', header = TRUE, row.names = 1, stringsAsFactors = TRUE)
+sampleinfo
+dim(count_data)
+
+```
+
+
+```{r}
+
+age <- paste(sampleinfo$Age)
+age<- factor(age)
+sex <- paste(sampleinfo$Sex)
+sex <- factor(sex)
+#group <- factor(paste0(sampleinfo$Sex, ".", sampleinfo$Age)).  # not grouping here although group info bringes change 
+y <- DGEList(count_data, group = age)
+
+```
+
+
+
+```{r}
+#sampleinfo$Sex <-relevel(sampleinfo$Sex, ref="M") ## relevel
+design <- model.matrix(~ 0+ sex*age)
+design
+```
+
+```{r}
+colnames(design) <- c("F18", "M18", "F14", "F4","FP60_S","M14", "M4", "MP60_S" )
+design
+```
+
+```{r}
+keep <- filterByExpr(y)
+y <- y[keep, , keep.lib.sizes=FALSE]
+dim(y)
+```
+
+
+```{r}
+y <- calcNormFactors(y, method = "TMM")
+```
+
+
+
+```{r}
+y <- estimateDisp(y, design, robust=TRUE)
+plotBCV(y)
+fit <- glmQLFit(y, design, robust=TRUE)
+head(fit$coefficients)
+```
+
+
+
+
+
+```{r}
+
+con <- makeContrasts(F_18vsF14 = F14-F4, levels=design)
+res <-glmQLFTest(fit, contrast =con)
+summary(decideTests(res))
+#qlf <- glmQLFTest(fit, coef=2)
+
+```
+
+```{r}
+topTags(res)
+```
+
+Rrm1	-1.636694	6.262948	95.17406	8.664240e-13	1.221369e-0
+
+
+## 3. Authors recommended design
+
+### Grouping for interaction
+
+```{r}
+## group = group which must be used here, after using this we will get 10 DEGs but we are using same as above to verify
+group <- factor(paste0(sampleinfo$Sex, ".", sampleinfo$Age))
+y <- DGEList(count_data, group=age) 
+```
+
+```{r}
+keep <- filterByExpr(y, group = age)
+y <- y[keep, , keep.lib.sizes=FALSE]
+dim(y)
+
+```
+
+```{r}
+y <- normLibSizes(y) # Default normalization is TMM
+y$samples
+```
+
+### Model Design
+
+```{r}
+design <- model.matrix(~ 0 + group)
+colnames(design) <- levels(group)
+design
+```
+
+```{r}
+y <- estimateDisp(y, design)
+y$common.dispersion
+
+```
+
+### Fitting to GLM
+
+```{r}
+fit <- glmQLFit(y, design, robust=TRUE)
+head(fit$coefficients)
+```
+
+```{r}
+
+con <- makeContrasts(F_18vsF14 = F.P14-F.P4, levels=design)
+res <-glmQLFTest(fit, contrast =con)
+summary(decideTests(res))
+```
+
+```{r}
+topTags(res)
+```
+
+
+Rrm1	-1.636694	6.262948	95.17406	8.664240e-13	1.221369e-09
+
+
+
+
+## Session information
+
+```{r,session}
+sessionInfo()
+```
+
+```{r}
+getwd()
+```
